@@ -150,7 +150,7 @@ def update_and_save_function(file_path):
             print(f"Error processing Vervotech {vervotech_id}: {e}")
             append_to_cannot_find_file("cannot_find_file.txt", vervotech_id)
 
-file = "id_list_file.txt"
+file = "D:/Rokon/ittImapping_project/id_list_file.txt"
 update_and_save_function(file)
 
 
