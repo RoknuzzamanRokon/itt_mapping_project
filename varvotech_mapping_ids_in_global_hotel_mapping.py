@@ -19,8 +19,18 @@ metadata = MetaData()
 Session = sessionmaker(bind=engine)
 session = Session()
 
-vervotech_mapping = Table("vervotech_mapping_2", metadata, autoload_with=engine)
 global_hotel_mapping = Table("global_hotel_mapping", metadata, autoload_with=engine)
+vervotech_mapping = Table("vervotech_mapping_2", metadata, autoload_with=engine)
+
+def get_a_column_info(unica_id):
+    query = (
+        global_hotel_mapping
+        .select()
+        .with_only_columns(global_hotel_mapping.c.restel) 
+        .where(global_hotel_mapping.c.UnicaId == unica_id)
+    )
+    result = session.execute(query).mappings().all()
+    return result
 
 def get_a_column_info_follow_a_id(unica_id):
     query = (
