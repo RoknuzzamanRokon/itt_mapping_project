@@ -210,6 +210,55 @@ def append_to_cannot_find_file(file_path, systemid):
 
 
 
+def update_and_save_function(supplier_code, file_path):
+    hotel_id_list = read_tracking_file(file_path)
+    
+    if not hotel_id_list:
+        print(f"No Vervotech Id to process in {file_path}")
+        return
+
+    hotel_id_list = list(hotel_id_list)
+
+    index = 0
+    while index < len(hotel_id_list):
+        hotel_id = hotel_id_list[index]
+        try:
+            update_global_hotel_mapping(supplier_code, hotel_id)
+            hotel_id_list.pop(index)  # Remove successfully processed ID
+            write_tracking_file(file_path, hotel_id_list)  # Save progress
+        except Exception as e:
+            print(f"Error processing Vervotech {hotel_id}: {e}")
+            append_to_cannot_find_file(
+                f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", 
+                hotel_id
+            )
+            index += 1  # Move to the next item
+
+    print("Processing completed successfully.")
+
+
+
+
+# def update_and_save_function(supplier_code, file_path):
+#     hotel_id_list = read_tracking_file(file_path)
+    
+#     if not hotel_id_list:
+#         print(f"No Vervotech Id to process in {file_path}")
+#         return
+
+#     hotel_id_list = list(hotel_id_list) 
+
+#     index = 0
+#     while index < len(hotel_id_list):
+#         hotel_id = hotel_id_list[index]
+#         try:
+#             update_global_hotel_mapping(supplier_code, hotel_id)
+#             hotel_id_list.pop(index)
+#             write_tracking_file(file_path, hotel_id_list)
+#         except Exception as e:
+#             print(f"Error processing Vervotech {hotel_id}: {e}")
+#             append_to_cannot_find_file(f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", hotel_id)
+#             index += 1
 
 
 def update_and_save_function(supplier_code, file_path):
@@ -221,20 +270,21 @@ def update_and_save_function(supplier_code, file_path):
 
     hotel_id_list = list(hotel_id_list) 
 
-    index = 0
-    while index < len(hotel_id_list):
-        hotel_id = hotel_id_list[index]
+    for hotel_id in hotel_id_list[:]: 
         try:
             update_global_hotel_mapping(supplier_code, hotel_id)
-            
-            hotel_id_list.pop(index)
-            
-            write_tracking_file(file_path, hotel_id_list)
-
+            hotel_id_list.remove(hotel_id) 
+            write_tracking_file(file_path, hotel_id_list) 
         except Exception as e:
             print(f"Error processing Vervotech {hotel_id}: {e}")
-            append_to_cannot_find_file(f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", hotel_id)
-            index += 1
+            append_to_cannot_find_file(
+                f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", 
+                hotel_id
+            )
+            hotel_id_list.remove(hotel_id) 
+            write_tracking_file(file_path, hotel_id_list) 
+            continue 
+    print("Processing completed successfully.")
 
 
 supplier_code = "goglobal"
