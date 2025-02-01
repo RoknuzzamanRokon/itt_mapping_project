@@ -86,6 +86,8 @@ def update_global_hotel_mapping(unica_id):
     print(f"Successful update: {unica_id}")
 
 
+
+
 def initialize_tracking_file(file_path, systemid_list):
     """
     Initializes the tracking file with all SystemIds if it doesn't already exist.

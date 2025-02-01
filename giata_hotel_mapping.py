@@ -18,13 +18,12 @@ metadata = MetaData()
 Session = sessionmaker(bind=engine)
 session = Session()
 
+
 global_hotel_mapping = Table("global_hotel_mapping", metadata, autoload_with=engine)
 
+
+
 def get_a_column_info(supplier, unica_id):
-    """
-    Retrieve the value from the specified column in global_hotel_mapping 
-    where that column equals the provided unica_id.
-    """
     query = select(global_hotel_mapping.c[supplier]).where(global_hotel_mapping.c[supplier] == unica_id)
     result = session.execute(query).scalar()
     return result
@@ -53,10 +52,6 @@ class GataAPI:
             return None
 
     def parse_supplier_codes(self, xml_root):
-        """
-        Parses the XML and returns a dictionary where each key is a supplier and
-        each value is a list of codes from the <code> elements.
-        """
         supplier_codes = {}
         
         for code_elem in xml_root.iter('code'):
@@ -113,7 +108,7 @@ def update_global_hotel_mapping(supplier, unica_id):
         "ratehawk2": ["ratehawkhotel", "ratehawkhotel_a", "ratehawkhotel_b", "ratehawkhotel_c", "ratehawkhotel_d", "ratehawkhotel_e"],
         "adivahotel": ["adivahahotel", "adivahahotel_a", "adivahahotel_b", "adivahahotel_c", "adivahahotel_d", "adivahahotel_e"],
         "grnconnect": ["grnconnect", "grnconnect_a", "grnconnect_b", "grnconnect_c", "grnconnect_d", "grnconnect_e"],
-        "juniperhotel": ["juniperhotel", "juniperhotel_a", "juniperhotel_b", "juniperhotel_c", "juniperhotel_d", "juniperhotel_e"],
+        "juniper": ["juniperhotel", "juniperhotel_a", "juniperhotel_b", "juniperhotel_c", "juniperhotel_d", "juniperhotel_e"],
         "mikihotel": ["mikihotel", "mikihotel_a", "mikihotel_b", "mikihotel_c", "mikihotel_d", "mikihotel_e"],
         "paximumhotel": ["paximumhotel", "paximumhotel_a", "paximumhotel_b", "paximumhotel_c", "paximumhotel_d", "paximumhotel_e"],
         "adonishotel": ["adonishotel", "adonishotel_a", "adonishotel_b", "adonishotel_c", "adonishotel_d", "adonishotel_e"],
@@ -161,10 +156,95 @@ def update_global_hotel_mapping(supplier, unica_id):
     else:
         print(f"No changes made for: {unica_id}")
 
+
+
+
+
+
+
+
+
+
+
+def initialize_tracking_file(file_path, systemid_list):
+    """
+    Initializes the tracking file with all SystemIds if it doesn't already exist.
+    """
+    if not os.path.exists(file_path):
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(map(str, systemid_list)) + "\n")
+    else:
+        print(f"Tracking file already exists: {file_path}")
+
+
+def read_tracking_file(file_path):
+    """
+    Reads the tracking file and returns a set of remaining SystemIds.
+    """
+    with open(file_path, "r", encoding="utf-8") as file:
+        return {line.strip() for line in file.readlines()}
+
+
+def write_tracking_file(file_path, remaining_ids):
+    """
+    Updates the tracking file with unprocessed SystemIds.
+    """
+    try:
+        with open(file_path, "w", encoding="utf-8") as file:
+            file.write("\n".join(remaining_ids) + "\n")
+    except Exception as e:
+        print(f"Error writing to tracking file: {e}")
+
+
+def append_to_cannot_find_file(file_path, systemid):
+    """
+    Appends the SystemId to the 'Cannot find any data' tracking file.
+    """
+    try:
+        with open(file_path, "a", encoding="utf-8") as file:
+            file.write(systemid + "\n")
+    except Exception as e:
+        print(f"Error appending to 'Cannot find any data' file: {e}")
+
+
+
+
+
+
+
+def update_and_save_function(supplier_code, file_path):
+    hotel_id_list = read_tracking_file(file_path)
     
-    
-# Example usage
-unica_id = "99999"
+    if not hotel_id_list:
+        print(f"No Vervotech Id to process in {file_path}")
+        return
+
+    hotel_id_list = list(hotel_id_list) 
+
+    index = 0
+    while index < len(hotel_id_list):
+        hotel_id = hotel_id_list[index]
+        try:
+            update_global_hotel_mapping(supplier_code, hotel_id)
+            
+            hotel_id_list.pop(index)
+            
+            write_tracking_file(file_path, hotel_id_list)
+
+        except Exception as e:
+            print(f"Error processing Vervotech {hotel_id}: {e}")
+            append_to_cannot_find_file(f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", hotel_id)
+            index += 1
+
+
 supplier_code = "goglobal"
-update_global_hotel_mapping(supplier=supplier_code,unica_id = unica_id)
+file = f"D:/Rokon/ittImapping_project/static/file/supplier_{supplier_code}_hotel_id_list.txt"
+
+update_and_save_function(supplier_code, file)
+
+
+   
+# unica_id = "99999"
+# supplier_code = "goglobal"
+# update_global_hotel_mapping(supplier=supplier_code,unica_id = unica_id)
 
