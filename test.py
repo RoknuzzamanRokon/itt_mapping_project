@@ -1,78 +1,70 @@
+import os
 import requests
 import xml.etree.ElementTree as ET
 from sqlalchemy import MetaData, Table, create_engine, select, update
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
-import os
+import time
 
 load_dotenv()
 
+# Database connection
 db_host = os.getenv('DB_HOST')
 db_user = os.getenv('DB_USER')
 db_pass = os.getenv('DB_PASSWORD')
 db_name = os.getenv('DB_NAME')
-
 connection_string = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}/{db_name}"
-engine = create_engine(connection_string)
+# engine = create_engine(connection_string)
+engine = create_engine(
+    connection_string,
+    pool_recycle=1800,  # Auto-close inactive connections after 30 minutes
+    pool_pre_ping=True,  # Remove dead connections
+    connect_args={"connect_timeout": 30}  # Auto-timeout queries after 30 seconds
+)
 metadata = MetaData()
 Session = sessionmaker(bind=engine)
 session = Session()
-
-
 global_hotel_mapping = Table("global_hotel_mapping", metadata, autoload_with=engine)
-
 
 
 def get_a_column_info(supplier, unica_id):
     query = select(global_hotel_mapping.c[supplier]).where(global_hotel_mapping.c[supplier] == unica_id)
     result = session.execute(query).scalar()
+    if result is None:
+        print(f"DEBUG: No value found in DB for supplier '{supplier}' and ID '{unica_id}'")
     return result
 
 
 class GataAPI:
     def __init__(self):
         self.base_url = "http://ghgml.giatamedia.com/webservice/rest/1.0/mappings"
-        self.headers = {
-            'Authorization': 'Basic Z2lhdGF8bm9mc2hvbi10b3Vycy5jb206Tm9mc2hvbjEyMy4='
-        }
-    
+        self.headers = {'Authorization': 'Basic Z2lhdGF8bm9mc2hvbi10b3Vycy5jb206Tm9mc2hvbjEyMy4='}
+
     def get_hotel_data_using_hotel_id(self, supplier_code, hotel_id):
         url = f"{self.base_url}/{supplier_code}/{hotel_id}"
+        # print(f"DEBUG: Calling URL: {url}")
         response = requests.post(url, headers=self.headers)
-        
         if response.status_code == 200:
             try:
-                root = ET.fromstring(response.text)
-                return root
+                return ET.fromstring(response.text)
             except ET.ParseError as e:
                 print("Error parsing XML:", e)
                 return None
-        else:
-            print(f"Failed to retrieve data for hotel ID {hotel_id}. Status Code: {response.status_code}")
-            return None
+        print(f"Failed to retrieve data for hotel ID {hotel_id}. Status Code: {response.status_code}")
+        return None
 
     def parse_supplier_codes(self, xml_root):
         supplier_codes = {}
-        
         for code_elem in xml_root.iter('code'):
             supplier = code_elem.attrib.get('supplier')
             value_elem = code_elem.find('value')
             code_value = value_elem.text.strip() if value_elem is not None and value_elem.text else ""
-            
-            if supplier not in supplier_codes:
-                supplier_codes[supplier] = []
-            supplier_codes[supplier].append(code_value)
-        
+            supplier_codes.setdefault(supplier, []).append(code_value)
         return supplier_codes
 
     def parse_giata_id(self, xml_root):
-        """
-        Parses the XML to extract the giataId attribute from the first <item> element.
-        """
         item_elem = xml_root.find('.//item')
-        if item_elem is not None:
-            return item_elem.attrib.get('giataId')
-        return None
+        return item_elem.attrib.get('giataId') if item_elem is not None else None
 
     def get_data(self, supplier_code, hotel_id):
         """
@@ -80,20 +72,33 @@ class GataAPI:
         """
         xml_root = self.get_hotel_data_using_hotel_id(supplier_code, hotel_id)
         if xml_root is None:
+            print("DEBUG: xml_root is None, ...................................................................skipping further parsing")
             return None, None
-        
+
         giata_id = self.parse_giata_id(xml_root)
         provider_data = self.parse_supplier_codes(xml_root)
-        
+        # print(f"DEBUG: giata_id: {giata_id}")
+        # print(f"DEBUG: provider_data: {provider_data}")
+
         return giata_id, provider_data
 
 
 def update_global_hotel_mapping(supplier, unica_id):
+    print(f"DEBUG: Starting update for {unica_id}")
     hotel_data = get_a_column_info(supplier, unica_id)
-    # print(hotel_data)
+    if hotel_data is None:
+        print(f"Skipping update for {unica_id} because hotel_data is None")
+        return
+
     gata_api = GataAPI()
     giata_id, provider_records = gata_api.get_data(supplier, hotel_data)
-    # print(giata_id, provider_records)
+    
+    if giata_id is None or provider_records is None:
+        print(f"Skipping update for {unica_id} due to missing giata_id or provider_records")
+        return
+
+    # print(f"DEBUG: giata_id: {giata_id}")
+    # print(f"DEBUG: provider_data: {provider_records}")
 
     provider_mappings = {
         "hotelbeds": ["hotelbeds", "hotelbeds_a", "hotelbeds_b", "hotelbeds_c", "hotelbeds_d", "hotelbeds_e"],
@@ -120,56 +125,68 @@ def update_global_hotel_mapping(supplier, unica_id):
         "illusionshotel": ["illusionshotel"]
     }
 
-    values_to_update = {key: None for sublist in provider_mappings.values() for key in sublist}
+    values_to_update = {col: None for cols in provider_mappings.values() for col in cols}
 
     for provider_code, ids in provider_records.items():
         if provider_code in provider_mappings:
             for column_name, provider_id in zip(provider_mappings[provider_code], ids):
-                if column_name in values_to_update and not values_to_update[column_name]:
+                if not values_to_update[column_name]:
                     values_to_update[column_name] = provider_id
 
-    existing_record = session.query(global_hotel_mapping).filter(global_hotel_mapping.c[supplier] == unica_id).first()
+    try:
+        existing_record = session.query(global_hotel_mapping).filter(global_hotel_mapping.c[supplier] == unica_id).first()
+    except Exception as e:
+        print(f"Error fetching existing record for {unica_id}: {e}")
+        return
+
+    # print(f"DEBUG: Existing record for {unica_id}: {existing_record}")
 
     final_update_values = {}
-    
     if existing_record and not existing_record.GiataCode:
         final_update_values["GiataCode"] = giata_id
-    
-    if 'GiataCode' in final_update_values:
         final_update_values["mapStatus"] = "G-Done"
-    
+
     for column, value in values_to_update.items():
-        if value is not None:
-            existing_value = getattr(existing_record, column, None)
-            if existing_value in (None, ''): 
-                final_update_values[column] = value
-    
+        try:
+            current_val = getattr(existing_record, column, None)
+        except AttributeError as e:
+            print(f"Error getting attribute {column} for record {unica_id}: {e}")
+            current_val = None
+        if value is not None and current_val in (None, ''):
+            final_update_values[column] = value
+
+    # print(f"DEBUG: Final update values for {unica_id}: {final_update_values}")
+
     if final_update_values:
-        query = (
-            update(global_hotel_mapping)
-            .where(global_hotel_mapping.c[supplier] == unica_id)
-            .values(**final_update_values)
-        )
-        session.execute(query)
-        session.commit()
-        print(f"Successful update: {unica_id}")
+        query = update(global_hotel_mapping).where(global_hotel_mapping.c[supplier] == unica_id).values(**final_update_values)
+        
+        try:
+            # print(f"DEBUG: Executing update for {unica_id}")
+            session.execute(query)
+            # print("DEBUG: Update executed; about to commit")
+            
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    session.commit()
+                    print(f"Successful update: {unica_id}")
+                    break 
+                except Exception as e:
+                    print(f"Commit attempt {attempt + 1} failed for {unica_id}: {e}")
+                    session.rollback()
+                    if attempt < max_attempts - 1:
+                        time.sleep(2) 
+                    else:
+                        print(f"Failed to commit after {max_attempts} attempts for {unica_id}")
+        except Exception as e:
+            print(f"Error during update execution for {unica_id}: {e}")
+            session.rollback()
     else:
         print(f"No changes made for: {unica_id}")
 
 
 
-
-
-
-
-
-
-
-
 def initialize_tracking_file(file_path, systemid_list):
-    """
-    Initializes the tracking file with all SystemIds if it doesn't already exist.
-    """
     if not os.path.exists(file_path):
         with open(file_path, "w", encoding="utf-8") as file:
             file.write("\n".join(map(str, systemid_list)) + "\n")
@@ -178,17 +195,11 @@ def initialize_tracking_file(file_path, systemid_list):
 
 
 def read_tracking_file(file_path):
-    """
-    Reads the tracking file and returns a set of remaining SystemIds.
-    """
     with open(file_path, "r", encoding="utf-8") as file:
-        return {line.strip() for line in file.readlines()}
+        return {line.strip() for line in file if line.strip()}
 
 
 def write_tracking_file(file_path, remaining_ids):
-    """
-    Updates the tracking file with unprocessed SystemIds.
-    """
     try:
         with open(file_path, "w", encoding="utf-8") as file:
             file.write("\n".join(remaining_ids) + "\n")
@@ -197,9 +208,6 @@ def write_tracking_file(file_path, remaining_ids):
 
 
 def append_to_cannot_find_file(file_path, systemid):
-    """
-    Appends the SystemId to the 'Cannot find any data' tracking file.
-    """
     try:
         with open(file_path, "a", encoding="utf-8") as file:
             file.write(systemid + "\n")
@@ -207,147 +215,31 @@ def append_to_cannot_find_file(file_path, systemid):
         print(f"Error appending to 'Cannot find any data' file: {e}")
 
 
-
-
-
 def update_and_save_function(supplier_code, file_path):
-    hotel_id_list = read_tracking_file(file_path)
-    
+    hotel_id_list = list(read_tracking_file(file_path))
     if not hotel_id_list:
-        print(f"No Vervotech Id to process in {file_path}")
+        print(f"No hotel Id to process in {file_path}")
         return
-
-    hotel_id_list = list(hotel_id_list)
-
-    index = 0
-    while index < len(hotel_id_list):
-        hotel_id = hotel_id_list[index]
+    x = 0
+    for hotel_id in hotel_id_list[:]:
         try:
+            x += 1
+            print(x)
             update_global_hotel_mapping(supplier_code, hotel_id)
-            hotel_id_list.pop(index)  # Remove successfully processed ID
-            write_tracking_file(file_path, hotel_id_list)  # Save progress
+            hotel_id_list.remove(hotel_id)
+            write_tracking_file(file_path, hotel_id_list)
         except Exception as e:
-            print(f"Error processing Vervotech {hotel_id}: {e}")
+            print(f"Error processing hotel {hotel_id}: {e}")
             append_to_cannot_find_file(
-                f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", 
+                f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt",
                 hotel_id
             )
-            index += 1  # Move to the next item
-
+            hotel_id_list.remove(hotel_id)
+            write_tracking_file(file_path, hotel_id_list)
     print("Processing completed successfully.")
 
 
-
-
-# def update_and_save_function(supplier_code, file_path):
-#     hotel_id_list = read_tracking_file(file_path)
-    
-#     if not hotel_id_list:
-#         print(f"No Vervotech Id to process in {file_path}")
-#         return
-
-#     hotel_id_list = list(hotel_id_list) 
-
-#     index = 0
-#     while index < len(hotel_id_list):
-#         hotel_id = hotel_id_list[index]
-#         try:
-#             update_global_hotel_mapping(supplier_code, hotel_id)
-#             hotel_id_list.pop(index)
-#             write_tracking_file(file_path, hotel_id_list)
-#         except Exception as e:
-#             print(f"Error processing Vervotech {hotel_id}: {e}")
-#             append_to_cannot_find_file(f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", hotel_id)
-#             index += 1
-
-
-def update_and_save_function(supplier_code, file_path):
-    hotel_id_list = read_tracking_file(file_path)
-    
-    if not hotel_id_list:
-        print(f"No Vervotech Id to process in {file_path}")
-        return
-
-    hotel_id_list = list(hotel_id_list) 
-
-    for hotel_id in hotel_id_list[:]: 
-        try:
-            update_global_hotel_mapping(supplier_code, hotel_id)
-            hotel_id_list.remove(hotel_id) 
-            write_tracking_file(file_path, hotel_id_list) 
-            continue
-        except Exception as e:
-            print(f"Error processing Vervotech {hotel_id}: {e}")
-            append_to_cannot_find_file(
-                f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", 
-                hotel_id
-            )
-            hotel_id_list.remove(hotel_id) 
-            write_tracking_file(file_path, hotel_id_list) 
-            continue 
-    print("Processing completed successfully.")
-
-
+# Execution
 supplier_code = "goglobal"
-file = f"D:/Rokon/ittImapping_project/static/file/supplier_{supplier_code}_hotel_id_list.txt"
-
-update_and_save_function(supplier_code, file)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# import schedule
-# import time
-
-# def update_and_save_function(supplier_code, file_path):
-#     hotel_id_list = read_tracking_file(file_path)
-    
-#     if not hotel_id_list:
-#         print(f"No Vervotech Id to process in {file_path}")
-#         return
-
-#     hotel_id_list = list(hotel_id_list) 
-
-#     for hotel_id in hotel_id_list[:]: 
-#         try:
-#             update_global_hotel_mapping(supplier_code, hotel_id)
-#             hotel_id_list.remove(hotel_id) 
-#             write_tracking_file(file_path, hotel_id_list) 
-#             continue
-#         except Exception as e:
-#             print(f"Error processing Vervotech {hotel_id}: {e}")
-#             append_to_cannot_find_file(
-#                 f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt", 
-#                 hotel_id
-#             )
-#             hotel_id_list.remove(hotel_id) 
-#             write_tracking_file(file_path, hotel_id_list) 
-#             continue 
-#     print("Processing completed successfully.")
-
-# supplier_code = "goglobal"
-# file = f"D:/Rokon/ittImapping_project/static/file/supplier_{supplier_code}_hotel_id_list.txt"
-
-# # Schedule the function to run every 2 minutes
-# schedule.every(2).minutes.do(update_and_save_function, supplier_code, file)
-
-# # Keep the script running
-# while True:
-#     schedule.run_pending()
-#     time.sleep(1)
-   
-# unica_id = "99999"
-# supplier_code = "goglobal"
-# update_global_hotel_mapping(supplier=supplier_code,unica_id = unica_id)
-
+file_path = f"D:/Rokon/ittImapping_project/static/file/supplier_{supplier_code}_hotel_id_list.txt"
+update_and_save_function(supplier_code, file_path)
