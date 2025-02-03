@@ -29,8 +29,6 @@ global_hotel_mapping = Table("global_hotel_mapping", metadata, autoload_with=eng
 
 
 
-
-
 def get_a_column_info(supplier, unica_id):
     query = select(global_hotel_mapping.c[supplier]).where(global_hotel_mapping.c[supplier] == unica_id)
     result = session.execute(query).scalar()
@@ -87,8 +85,10 @@ class GataAPI:
         return giata_id, provider_data
 
 
+
 def update_global_hotel_mapping(supplier, unica_id):
     print(f"DEBUG: Starting update for {unica_id}")
+    
     hotel_data = get_a_column_info(supplier, unica_id)
     if hotel_data is None:
         print(f"Skipping update for {unica_id} because hotel_data is None")
@@ -96,13 +96,10 @@ def update_global_hotel_mapping(supplier, unica_id):
 
     gata_api = GataAPI()
     giata_id, provider_records = gata_api.get_data(supplier, hotel_data)
-    
+
     if giata_id is None or provider_records is None:
         print(f"Skipping update for {unica_id} due to missing giata_id or provider_records")
         return
-
-    # print(f"DEBUG: giata_id: {giata_id}")
-    # print(f"DEBUG: provider_data: {provider_records}")
 
     provider_mappings = {
         "hotelbeds": ["hotelbeds", "hotelbeds_a", "hotelbeds_b", "hotelbeds_c", "hotelbeds_d", "hotelbeds_e"],
@@ -143,8 +140,6 @@ def update_global_hotel_mapping(supplier, unica_id):
         print(f"Error fetching existing record for {unica_id}: {e}")
         return
 
-    # print(f"DEBUG: Existing record for {unica_id}: {existing_record}")
-
     final_update_values = {}
     if existing_record and not existing_record.GiataCode:
         final_update_values["GiataCode"] = giata_id
@@ -152,26 +147,31 @@ def update_global_hotel_mapping(supplier, unica_id):
 
     for column, value in values_to_update.items():
         try:
-            current_val = getattr(existing_record, column, None)
+            current_val = getattr(existing_record, column, None) 
         except AttributeError as e:
             print(f"Error getting attribute {column} for record {unica_id}: {e}")
             current_val = None
-        if value is not None and current_val in (None, ''):
-            final_update_values[column] = value
 
-    # print(f"DEBUG: Final update values for {unica_id}: {final_update_values}")
+        if value is not None:
+            existing_values = set(str(current_val).split()) if current_val else set()
+            new_values = set(str(value).split())
+
+            unique_values = new_values - existing_values
+
+            if unique_values:
+                final_update_values[column] = " ".join(existing_values | unique_values)
+            else:
+                skipping = True
+                print(f"Skipping update for {column}, as all values are already present: {current_val}")
 
     if final_update_values:
         query = update(global_hotel_mapping).where(global_hotel_mapping.c[supplier] == unica_id).values(**final_update_values)
         
         try:
-            # print(f"DEBUG: Executing update for {unica_id}")
-            session.execute(query)
-            # print("DEBUG: Update executed; about to commit")
-            
             max_attempts = 3
             for attempt in range(max_attempts):
                 try:
+                    session.execute(query)
                     session.commit()
                     print(f"Successful update: {unica_id}")
                     break 
@@ -179,7 +179,7 @@ def update_global_hotel_mapping(supplier, unica_id):
                     print(f"Commit attempt {attempt + 1} failed for {unica_id}: {e}")
                     session.rollback()
                     if attempt < max_attempts - 1:
-                        time.sleep(2) 
+                        time.sleep(2)
                     else:
                         print(f"Failed to commit after {max_attempts} attempts for {unica_id}")
         except Exception as e:
@@ -187,6 +187,7 @@ def update_global_hotel_mapping(supplier, unica_id):
             session.rollback()
     else:
         print(f"No changes made for: {unica_id}")
+
 
 
 
