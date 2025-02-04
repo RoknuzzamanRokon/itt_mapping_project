@@ -130,9 +130,22 @@ def update_global_hotel_mapping(supplier, unica_id):
 
     for provider_code, ids in provider_records.items():
         if provider_code in provider_mappings:
-            for column_name, provider_id in zip(provider_mappings[provider_code], ids):
-                if not values_to_update[column_name]:
+            provider_columns = provider_mappings[provider_code]
+            for i, provider_id in enumerate(ids):
+                if i >= len(provider_columns):  # Avoid index out of range
+                    break  
+
+                column_name = provider_columns[i]
+                current_val = getattr(existing_record, column_name, None)
+
+                # Ensure we don't store duplicates
+                if current_val is None or current_val.strip() == "":
                     values_to_update[column_name] = provider_id
+                elif str(provider_id) not in str(current_val).split():
+                    for col in provider_columns:
+                        if not getattr(existing_record, col, None):
+                            values_to_update[col] = provider_id
+                            break
 
     try:
         existing_record = session.query(global_hotel_mapping).filter(global_hotel_mapping.c[supplier] == unica_id).first()
@@ -146,23 +159,8 @@ def update_global_hotel_mapping(supplier, unica_id):
         final_update_values["mapStatus"] = "G-Done"
 
     for column, value in values_to_update.items():
-        try:
-            current_val = getattr(existing_record, column, None) 
-        except AttributeError as e:
-            print(f"Error getting attribute {column} for record {unica_id}: {e}")
-            current_val = None
-
         if value is not None:
-            existing_values = set(str(current_val).split()) if current_val else set()
-            new_values = set(str(value).split())
-
-            unique_values = new_values - existing_values
-
-            if unique_values:
-                final_update_values[column] = " ".join(existing_values | unique_values)
-            else:
-                skipping = True
-                print(f"Skipping update for {column}, as all values are already present: {current_val}")
+            final_update_values[column] = value
 
     if final_update_values:
         query = update(global_hotel_mapping).where(global_hotel_mapping.c[supplier] == unica_id).values(**final_update_values)
@@ -236,7 +234,7 @@ def update_and_save_function(supplier_code, file_path):
         except Exception as e:
             print(f"Error processing hotel {hotel_id}: {e}")
             append_to_cannot_find_file(
-                f"D:/Rokon/ittImapping_project/static/file/cannot_find_{supplier_code}_hotel_id_list.txt",
+                f"D:/Rokon/ittImapping_project/static/file/{supplier_code}_cannot_find_hotel_id_list.txt",
                 hotel_id
             )
             hotel_id_list.remove(hotel_id)
@@ -245,6 +243,6 @@ def update_and_save_function(supplier_code, file_path):
 
 
 # Execution
-supplier_code = "goglobal"
-file_path = f"D:/Rokon/ittImapping_project/static/file/supplier_{supplier_code}_hotel_id_list.txt"
+supplier_code = "hotelston"
+file_path = f"D:/Rokon/ittImapping_project/static/file/{supplier_code}supplier__hotel_id_list.txt"
 update_and_save_function(supplier_code, file_path)

@@ -1,90 +1,84 @@
-from sqlalchemy import MetaData, Table, create_engine, select, update, func
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-db_host = os.getenv('DB_HOST')
-db_user = os.getenv('DB_USER')
-db_pass = os.getenv('DB_PASSWORD')
-db_name = os.getenv('DB_NAME')
-
-connection_string = f"mysql+pymysql://{db_user}:{db_pass}@{db_host}/{db_name}"
-engine = create_engine(connection_string)
-metadata = MetaData()
-Session = sessionmaker(bind=engine)
-session = Session()
-
-global_hotel_mapping = Table("global_hotel_mapping_2", metadata, autoload_with=engine)
-
-
-
-provider_mappings = {
-    "hotelbeds": ["hotelbeds", "hotelbeds_a", "hotelbeds_b", "hotelbeds_c", "hotelbeds_d", "hotelbeds_e"],
-    "agoda": ["agoda", "agoda_a", "agoda_b", "agoda_c", "agoda_d", "agoda_e"],
-    "tbo": ["tbohotel", "tbohotel_a", "tbohotel_b", "tbohotel_c", "tbohotel_d", "tbohotel_e"],
-    "ean": ["ean", "ean_a", "ean_b", "ean_c", "ean_d", "ean_e"],
-    "mgholiday": ["mgholiday", "mgholiday_a", "mgholiday_b", "mgholiday_c", "mgholiday_d", "mgholiday_e"],
-    "restel": ["restel", "restel_a", "restel_b", "restel_c", "restel_d", "restel_e"],
-    "stuba": ["stuba", "stuba_a", "stuba_b", "stuba_c", "stuba_d", "stuba_e"],
-    "hyperguestdirect": ["hyperguestdirect", "hyperguestdirect_a", "hyperguestdirect_b", "hyperguestdirect_c", "hyperguestdirect_d", "hyperguestdirect_e"],
-    "goglobal": ["goglobal", "goglobal_a", "goglobal_b", "goglobal_c", "goglobal_d", "goglobal_e"],
-    "ratehawk2": ["ratehawkhotel", "ratehawkhotel_a", "ratehawkhotel_b", "ratehawkhotel_c", "ratehawkhotel_d", "ratehawkhotel_e"],
-    "adivahotel": ["adivahahotel", "adivahahotel_a", "adivahahotel_b", "adivahahotel_c", "adivahahotel_d", "adivahahotel_e"],
-    "grnconnect": ["grnconnect", "grnconnect_a", "grnconnect_b", "grnconnect_c", "grnconnect_d", "grnconnect_e"],
-    "juniper": ["juniperhotel", "juniperhotel_a", "juniperhotel_b", "juniperhotel_c", "juniperhotel_d", "juniperhotel_e"],
-    "mikihotel": ["mikihotel", "mikihotel_a", "mikihotel_b", "mikihotel_c", "mikihotel_d", "mikihotel_e"],
-    "paximumhotel": ["paximumhotel", "paximumhotel_a", "paximumhotel_b", "paximumhotel_c", "paximumhotel_d", "paximumhotel_e"],
-    "adonishotel": ["adonishotel", "adonishotel_a", "adonishotel_b", "adonishotel_c", "adonishotel_d", "adonishotel_e"],
-    "w2mhotel": ["w2mhotel", "w2mhotel_a", "w2mhotel_b", "w2mhotel_c", "w2mhotel_d", "w2mhotel_e"],
-    "oryxhotel": ["oryxhotel", "oryxhotel_a", "oryxhotel_b", "oryxhotel_c", "oryxhotel_d", "oryxhotel_e"],
-    "dotw": ["dotw", "dotw_a", "dotw_b", "dotw_c", "dotw_d", "dotw_e"],
-    "hotelston": ["hotelston", "hotelston_a", "hotelston_b", "hotelston_c", "hotelston_d", "hotelston_e"],
-    "letsflyhotel": ["letsflyhotel", "letsflyhotel_a", "letsflyhotel_b", "letsflyhotel_c", "letsflyhotel_d", "letsflyhotel_e"],
-    "illusionshotel": ["illusionshotel"]
-}
-
-
-# def get_unique_id_list(supplier):
-#     query = (
-#         select(global_hotel_mapping.c[supplier])
-#         .distinct()
-#         .where(global_hotel_mapping.c[supplier].isnot(None))
-#     )
-#     result = session.execute(query).scalars().all()
-#     return result
+def update_global_hotel_mapping(supplier, unica_id):
+    print(f"DEBUG: Starting update for {unica_id}")
     
-# def save_id_list_to_file(supplier):
-#     unique_ids = get_unique_id_list(supplier)
-#     file_name = f"D:/Rokon/ittImapping_project/static/file/{supplier}_supplier__hotel_id_list_2.txt"
-    
-#     with open(file_name, "w") as file:
-#         for unica_id in unique_ids:
-#             file.write(f"{unica_id}\n")
-#     print(len(unique_ids))
-#     print(f"Unique IDs saved to {file_name}")
+    hotel_data = get_a_column_info(supplier, unica_id)
+    if hotel_data is None:
+        print(f"Skipping update for {unica_id} because hotel_data is None")
+        return
 
+    gata_api = GataAPI()
+    giata_id, provider_records = gata_api.get_data(supplier, hotel_data)
 
-def get_unique_id_list(supplier):
-    columns = provider_mappings.get(supplier, [supplier])  
-    query = select(*[global_hotel_mapping.c[col] for col in columns]) 
-    result = session.execute(query).all()  
-    
-    unique_ids = {row[col] for row in result for col in range(len(columns)) if row[col] is not None}
+    if giata_id is None or provider_records is None:
+        print(f"Skipping update for {unica_id} due to missing giata_id or provider_records")
+        return
 
-    return list(unique_ids)  
+    provider_mappings = {
+        "hotelbeds": ["hotelbeds", "hotelbeds_a", "hotelbeds_b", "hotelbeds_c", "hotelbeds_d", "hotelbeds_e"],
+        "agoda": ["agoda", "agoda_a", "agoda_b", "agoda_c", "agoda_d", "agoda_e"],
+        "tbo": ["tbohotel", "tbohotel_a", "tbohotel_b", "tbohotel_c", "tbohotel_d", "tbohotel_e"],
+        "ean": ["ean", "ean_a", "ean_b", "ean_c", "ean_d", "ean_e"],
+        "mgholiday": ["mgholiday", "mgholiday_a", "mgholiday_b", "mgholiday_c", "mgholiday_d", "mgholiday_e"],
+        "restel": ["restel", "restel_a", "restel_b", "restel_c", "restel_d", "restel_e"],
+        "stuba": ["stuba", "stuba_a", "stuba_b", "stuba_c", "stuba_d", "stuba_e"],
+    }
 
-def save_id_list_to_file(supplier):
-    unique_ids = get_unique_id_list(supplier)
-    file_name = f"D:/Rokon/ittImapping_project/static/file/{supplier}_supplier_hotel_id_list_3.txt"
-    
-    with open(file_name, "w") as file:
-        for unique_id in unique_ids:
-            file.write(f"{unique_id}\n")
+    values_to_update = {col: None for cols in provider_mappings.values() for col in cols}
 
-    print(len(unique_ids))
-    print(f"Unique IDs saved to {file_name}")
+    for provider_code, ids in provider_records.items():
+        if provider_code in provider_mappings:
+            provider_columns = provider_mappings[provider_code]
+            for i, provider_id in enumerate(ids):
+                if i >= len(provider_columns):  # Avoid index out of range
+                    break  
 
-supplier = "grnconnect"
-save_id_list_to_file(supplier)
+                column_name = provider_columns[i]
+                current_val = getattr(existing_record, column_name, None)
+
+                # Ensure we don't store duplicates
+                if current_val is None or current_val.strip() == "":
+                    values_to_update[column_name] = provider_id
+                elif str(provider_id) not in str(current_val).split():
+                    for col in provider_columns:
+                        if not getattr(existing_record, col, None):
+                            values_to_update[col] = provider_id
+                            break
+
+    try:
+        existing_record = session.query(global_hotel_mapping).filter(global_hotel_mapping.c[supplier] == unica_id).first()
+    except Exception as e:
+        print(f"Error fetching existing record for {unica_id}: {e}")
+        return
+
+    final_update_values = {}
+    if existing_record and not existing_record.GiataCode:
+        final_update_values["GiataCode"] = giata_id
+        final_update_values["mapStatus"] = "G-Done"
+
+    for column, value in values_to_update.items():
+        if value is not None:
+            final_update_values[column] = value
+
+    if final_update_values:
+        query = update(global_hotel_mapping).where(global_hotel_mapping.c[supplier] == unica_id).values(**final_update_values)
+        
+        try:
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    session.execute(query)
+                    session.commit()
+                    print(f"Successful update: {unica_id}")
+                    break 
+                except Exception as e:
+                    print(f"Commit attempt {attempt + 1} failed for {unica_id}: {e}")
+                    session.rollback()
+                    if attempt < max_attempts - 1:
+                        time.sleep(2)
+                    else:
+                        print(f"Failed to commit after {max_attempts} attempts for {unica_id}")
+        except Exception as e:
+            print(f"Error during update execution for {unica_id}: {e}")
+            session.rollback()
+    else:
+        print(f"No changes made for: {unica_id}")
