@@ -16,7 +16,7 @@ metadata = MetaData()
 Session = sessionmaker(bind=engine)
 session = Session()
 
-global_hotel_mapping = Table("global_hotel_mapping", metadata, autoload_with=engine)
+global_hotel_mapping = Table("global_hotel_mapping_2", metadata, autoload_with=engine)
 
 def get_unique_id_list(supplier):
     query = (
@@ -29,13 +29,13 @@ def get_unique_id_list(supplier):
     
 def save_id_list_to_file(supplier):
     unique_ids = get_unique_id_list(supplier)
-    file_name = f"D:/Rokon/ittImapping_project/static/file/supplier_{supplier}_hotel_id_list.txt"
+    file_name = f"D:/Rokon/ittImapping_project/static/file/{supplier}_supplier__hotel_id_list_2.txt"
     
     with open(file_name, "w") as file:
         for unica_id in unique_ids:
             file.write(f"{unica_id}\n")
-    
+    print(len(unique_ids))
     print(f"Unique IDs saved to {file_name}")
 
-supplier = "goglobal"
+supplier = "grnconnect"
 save_id_list_to_file(supplier)

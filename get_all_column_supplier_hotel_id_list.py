@@ -46,26 +46,6 @@ provider_mappings = {
 }
 
 
-# def get_unique_id_list(supplier):
-#     query = (
-#         select(global_hotel_mapping.c[supplier])
-#         .distinct()
-#         .where(global_hotel_mapping.c[supplier].isnot(None))
-#     )
-#     result = session.execute(query).scalars().all()
-#     return result
-    
-# def save_id_list_to_file(supplier):
-#     unique_ids = get_unique_id_list(supplier)
-#     file_name = f"D:/Rokon/ittImapping_project/static/file/{supplier}_supplier__hotel_id_list_2.txt"
-    
-#     with open(file_name, "w") as file:
-#         for unica_id in unique_ids:
-#             file.write(f"{unica_id}\n")
-#     print(len(unique_ids))
-#     print(f"Unique IDs saved to {file_name}")
-
-
 def get_unique_id_list(supplier):
     columns = provider_mappings.get(supplier, [supplier])  
     query = select(*[global_hotel_mapping.c[col] for col in columns]) 
