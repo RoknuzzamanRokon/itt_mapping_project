@@ -23,7 +23,7 @@ def get_unique_id_list(supplier):
         select(global_hotel_mapping.c[supplier])
         .distinct()
         .where(global_hotel_mapping.c[supplier].isnot(None))
-        .where(global_hotel_mapping.c.status != 'G-Done')
+        .where(global_hotel_mapping.c.mapStatus != 'G-Done')
     )
 
     result = session.execute(query).scalars().all()

@@ -85,7 +85,6 @@ class GataAPI:
         return giata_id, provider_data
 
 
-
 def update_global_hotel_mapping(supplier, unica_id):
     print(f"DEBUG: Starting update for {unica_id}")
     
@@ -126,26 +125,6 @@ def update_global_hotel_mapping(supplier, unica_id):
         "illusionshotel": ["illusionshotel"]
     }
 
-    values_to_update = {col: None for cols in provider_mappings.values() for col in cols}
-
-    for provider_code, ids in provider_records.items():
-        if provider_code in provider_mappings:
-            provider_columns = provider_mappings[provider_code]
-            for i, provider_id in enumerate(ids):
-                if i >= len(provider_columns):  # Avoid index out of range
-                    break  
-
-                column_name = provider_columns[i]
-                current_val = getattr(existing_record, column_name, None)
-
-                # Ensure we don't store duplicates
-                if current_val is None or current_val.strip() == "":
-                    values_to_update[column_name] = provider_id
-                elif str(provider_id) not in str(current_val).split():
-                    for col in provider_columns:
-                        if not getattr(existing_record, col, None):
-                            values_to_update[col] = provider_id
-                            break
 
     try:
         existing_record = session.query(global_hotel_mapping).filter(global_hotel_mapping.c[supplier] == unica_id).first()
@@ -153,18 +132,39 @@ def update_global_hotel_mapping(supplier, unica_id):
         print(f"Error fetching existing record for {unica_id}: {e}")
         return
 
+    values_to_update = {}
+
+    for provider_code, ids in provider_records.items():
+        if provider_code in provider_mappings:
+            provider_columns = provider_mappings[provider_code]
+
+            # Get existing values from the database
+            existing_values = {str(getattr(existing_record, col)) for col in provider_columns if getattr(existing_record, col)}
+
+            # Filter out already present values
+            unique_values = [val for val in ids if str(val) not in existing_values]
+
+            # Insert only unique values into empty columns
+            empty_columns = [col for col in provider_columns if not getattr(existing_record, col)]
+
+            for col, val in zip(empty_columns, unique_values):
+                values_to_update[col] = val
+
     final_update_values = {}
+
+    # Only update GiataCode if it's missing
     if existing_record and not existing_record.GiataCode:
         final_update_values["GiataCode"] = giata_id
         final_update_values["mapStatus"] = "G-Done"
 
+    # Add only non-null values to final update
     for column, value in values_to_update.items():
         if value is not None:
             final_update_values[column] = value
 
     if final_update_values:
         query = update(global_hotel_mapping).where(global_hotel_mapping.c[supplier] == unica_id).values(**final_update_values)
-        
+
         try:
             max_attempts = 3
             for attempt in range(max_attempts):
@@ -172,7 +172,7 @@ def update_global_hotel_mapping(supplier, unica_id):
                     session.execute(query)
                     session.commit()
                     print(f"Successful update: {unica_id}")
-                    break 
+                    break  
                 except Exception as e:
                     print(f"Commit attempt {attempt + 1} failed for {unica_id}: {e}")
                     session.rollback()
