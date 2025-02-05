@@ -121,7 +121,7 @@ def update_global_hotel_mapping(supplier, unica_id):
         "oryxhotel": ["oryxhotel", "oryxhotel_a", "oryxhotel_b", "oryxhotel_c", "oryxhotel_d", "oryxhotel_e"],
         "dotw": ["dotw", "dotw_a", "dotw_b", "dotw_c", "dotw_d", "dotw_e"],
         "hotelston": ["hotelston", "hotelston_a", "hotelston_b", "hotelston_c", "hotelston_d", "hotelston_e"],
-        "letsflyhotel": ["letsflyhotel", "letsflyhotel_a", "letsflyhotel_b", "letsflyhotel_c", "letsflyhotel_d", "letsflyhotel_e"],
+        "letsfly": ["letsflyhotel", "letsflyhotel_a", "letsflyhotel_b", "letsflyhotel_c", "letsflyhotel_d", "letsflyhotel_e"],
         "illusionshotel": ["illusionshotel"]
     }
 
@@ -190,6 +190,7 @@ def update_global_hotel_mapping(supplier, unica_id):
 
 
 def initialize_tracking_file(file_path, systemid_list):
+
     if not os.path.exists(file_path):
         with open(file_path, "w", encoding="utf-8") as file:
             file.write("\n".join(map(str, systemid_list)) + "\n")
@@ -198,6 +199,7 @@ def initialize_tracking_file(file_path, systemid_list):
 
 
 def read_tracking_file(file_path):
+
     with open(file_path, "r", encoding="utf-8") as file:
         return {line.strip() for line in file if line.strip()}
 

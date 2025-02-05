@@ -41,3 +41,4 @@ def save_id_list_to_file(supplier):
 
 supplier = "goglobal"
 save_id_list_to_file(supplier)
+
